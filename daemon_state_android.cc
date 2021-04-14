@@ -27,6 +27,7 @@
 namespace chromeos_update_engine {
 
 bool DaemonStateAndroid::Initialize() {
+  // 获取bootcontrol接口，boot_control_ -- Interface for the boot control functions
   boot_control_ = boot_control::CreateBootControl();
   if (!boot_control_) {
     LOG(WARNING) << "Unable to create BootControl instance, using stub "
@@ -47,10 +48,14 @@ bool DaemonStateAndroid::Initialize() {
   base::FilePath non_volatile_path;
   // TODO(deymo): Fall back to in-memory prefs if there's no physical directory
   // available.
+  // 获取闪存上的非易变路径
   if (!hardware_->GetNonVolatileDirectory(&non_volatile_path)) {
     LOG(ERROR) << "Failed to get a non-volatile directory.";
     return false;
   }
+  // Class Prefs:Implements a preference store by storing the value associated with
+  // a key in a separate file named after the key under a preference
+  // store directory.
   Prefs* prefs = new Prefs();
   prefs_.reset(prefs);
   if (!prefs->Init(non_volatile_path.Append(kPrefsSubDirectory))) {
@@ -64,6 +69,7 @@ bool DaemonStateAndroid::Initialize() {
   certificate_checker_->Init();
 
   // Initialize the UpdateAttempter before the UpdateManager.
+  // 重要：初始化更新的具体实现类 UpdateAttempterAndroid 赋值给update_attempter_
   update_attempter_.reset(new UpdateAttempterAndroid(
       this, prefs_.get(), boot_control_.get(), hardware_.get()));
 
@@ -73,6 +79,7 @@ bool DaemonStateAndroid::Initialize() {
 bool DaemonStateAndroid::StartUpdater() {
   // The DaemonState in Android is a passive daemon. It will only start applying
   // an update when instructed to do so from the exposed binder API.
+  // 调用到void UpdateAttempterAndroid::Init()
   update_attempter_->Init();
   return true;
 }

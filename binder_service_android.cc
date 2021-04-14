@@ -103,6 +103,10 @@ Status BinderUpdateEngineAndroidService::applyPayload(
   }
 
   brillo::ErrorPtr error;
+  // 1 先在DaemonStateAndroid::Initialize中执行了  update_attempter_.reset(new UpdateAttempterAndroid(    this, prefs_.get(), boot_control_.get(), hardware_.get()))
+  // 2 然后在UpdateEngineDaemon::OnInit()中执行了 binder_service_ = new BinderUpdateEngineAndroidService{daemon_state_android->service_delegate()};
+  // 将daemon_state_android->service_delegate()返回的update_attempter_设置给了BinderUpdateEngineAndroidService的service_delegate_成员
+  // 因此对BinderUpdateEngineAndroidService::applyPayload就会调用到UpdateAttempterAndroid::ApplyPayload
   if (!service_delegate_->ApplyPayload(
           payload_url, payload_offset, payload_size, str_headers, &error)) {
     return ErrorPtrToStatus(error);

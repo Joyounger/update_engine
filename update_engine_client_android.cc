@@ -49,6 +49,7 @@ namespace internal {
 
 class UpdateEngineClientAndroid : public brillo::Daemon {
  public:
+  // 用传入的参数argc, argv初始化私有成员变量argc_, argv_
   UpdateEngineClientAndroid(int argc, char** argv) : argc_(argc), argv_(argv) {}
 
   int ExitWhenIdle(const Status& status);
@@ -72,6 +73,7 @@ class UpdateEngineClientAndroid : public brillo::Daemon {
   // Called whenever the UpdateEngine daemon dies.
   void UpdateEngineServiceDied();
 
+  // 下面定义了私有成员变量argc_和argv_用于存放main函数接收到的参数
   // Copy of argc and argv passed to main().
   int argc_;
   char** argv_;
@@ -104,10 +106,12 @@ Status UpdateEngineClientAndroid::UECallback::onPayloadApplicationComplete(
 }
 
 int UpdateEngineClientAndroid::OnInit() {
+  // 这里在子类中调用父类的OnInit操作，注册信号SIGTERM, SIGINT和SIGHUP的处理函数
   int ret = Daemon::OnInit();
   if (ret != EX_OK)
     return ret;
 
+  // 命令行处理选项将宏DEFINE_xxx展开，最终得到FLAGS_xxx变量，因此命令行选项和生成的FLAGS_xxx变量的对应关系为：xxx - FLAGS_xxx
   DEFINE_bool(update, false, "Start a new update, if no update in progress.");
   DEFINE_string(payload,
                 "http://127.0.0.1:8080/payload",
@@ -143,7 +147,9 @@ int UpdateEngineClientAndroid::OnInit() {
               "Exit status is 0 if the update succeeded, and 1 otherwise.");
 
   // Boilerplate init commands.
+  // 用argc_, argv_初始化命令行解析器
   base::CommandLine::Init(argc_, argv_);
+  // 在这里解析argc_和argv_参数，如果不带参数，则显示错误并返回
   brillo::FlagHelper::Init(argc_, argv_, "Android Update Engine Client");
   if (argc_ == 1) {
     LOG(ERROR) << "Nothing to do. Run with --help for help.";
@@ -161,12 +167,16 @@ int UpdateEngineClientAndroid::OnInit() {
   }
 
   bool keep_running = false;
+  // 初始化Log操作
   brillo::InitLog(brillo::kLogToStderr);
 
   // Initialize a binder watcher early in the process before any interaction
   // with the binder driver.
   binder_watcher_.Init();
 
+  // 获取"android.os.UpdateEngineService"服务，并将其代理对象存放到service_中，可以简单理解为所有UpdateEngineService服务的操作都可以调用service_成员的相应方法来实现
+  // update_engine\binder_service_android.h中，class BinderUpdateEngineAndroidService有const char* ServiceName() const { return "android.os.UpdateEngineService"; } 
+  // 因此getService执行后，service_的方法都调用到class BinderUpdateEngineAndroidService的对应方法
   android::status_t status = android::getService(
       android::String16("android.os.UpdateEngineService"), &service_);
   if (status != android::OK) {
@@ -175,6 +185,28 @@ int UpdateEngineClientAndroid::OnInit() {
     return ExitWhenIdle(1);
   }
 
+/*
+命令行调用的操作：
+#update_engine_client \
+  --payload=http://stbszx-bld-5/public/android/full-ota/payload.bin \
+  --update \
+  --headers="\
+	FILE_HASH=ozGgyQEcnkI5ZaX+Wbjo5I/PCR7PEZka9fGd0nWa+oY= \
+	FILE_SIZE=282164983
+	METADATA_HASH=GLIKfE6KRwylWMHsNadG/Q8iy5f7ENWTatvMdBlpoPg= \
+	METADATA_SIZE=21023 \
+  "
+因此
+FLAGS_payload: "http://stbszx-bld-5/public/android/full-ota/payload.bin"
+FLAGS_update: true
+FLAGS_headers: "FILE_HASH=ozGgyQEcnkI5ZaX+Wbjo5I/PCR7PEZka9fGd0nWa+oY= \
+                FILE_SIZE=282164983
+                METADATA_HASH=GLIKfE6KRwylWMHsNadG/Q8iy5f7ENWTatvMdBlpoPg= \
+                METADATA_SIZE=21023"
+
+*/
+
+  // 将命令行update_engine_client提供的各种操作，如suspend, resume, cancel, reset_status, follow, update通过代理对象service_通知服务进程UpdateEngineService
   if (FLAGS_suspend) {
     return ExitWhenIdle(service_->suspend());
   }
@@ -200,8 +232,10 @@ int UpdateEngineClientAndroid::OnInit() {
     return ExitWhenIdle(status);
   }
 
+  // 如果指定"follow"选项，则绑定回调操作UECallback
   if (FLAGS_follow) {
     // Register a callback object with the service.
+    // 生成一个UECallback对象，并通过service_->bind(callback_, &bound)将其绑定到UpdateEngineService服务端的IUpdateEngineCallback对象上
     callback_ = new UECallback(this);
     bool bound;
     if (!service_->bind(callback_, &bound).isOk() || !bound) {
@@ -212,12 +246,23 @@ int UpdateEngineClientAndroid::OnInit() {
   }
 
   if (FLAGS_update) {
+  	// 解析"headers"，生成键值对列表
+  	// 先将FLAGS_headers按照换行符”\n“进行拆分，并存放到headers中
+  	// 将headers的每一项通过push_back操作存放到容器and_headers中
     std::vector<std::string> headers = base::SplitString(
         FLAGS_headers, "\n", base::KEEP_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
     std::vector<android::String16> and_headers;
     for (const auto& header : headers) {
       and_headers.push_back(android::String16{header.data(), header.size()});
     }
+	// 调用服务进程的"applyPlayload"操作
+	// 将payload, offset, size参数和解析得到的and_headers一并传递给service_->applyPayload()方法，此时服务端UpdateEngineService进程会调用applyPayload进行升级更新
+	// service_->applyPayload直接调用到了Status BinderUpdateEngineAndroidService::applyPayload(
+    // const android::String16& url,
+    // int64_t payload_offset,
+    // int64_t payload_size,
+    // const std::vector<android::String16>& header_kv_pairs)
+	// 这里最终调用到的是UpdateAttempterAndroid::ApplyPayload
     Status status = service_->applyPayload(
         android::String16{FLAGS_payload.data(), FLAGS_payload.size()},
         FLAGS_offset,
@@ -227,11 +272,13 @@ int UpdateEngineClientAndroid::OnInit() {
       return ExitWhenIdle(status);
   }
 
+  // follow状态需要一直跟踪server端的状态，因此要求一直运行，但除follow操作外的其它操作，在执行完后就完成了，不再需要继续执行，所以如果keep_runing为false，则退出
   if (!keep_running)
     return ExitWhenIdle(EX_OK);
 
   // When following updates status changes, exit if the update_engine daemon
   // dies.
+  // 如果server端挂掉了，再follow就没有意义了，所以注册一个事件来检查server端是否已经挂掉
   android::BinderWrapper::Create();
   android::BinderWrapper::Get()->RegisterForDeathNotifications(
       android::os::IUpdateEngine::asBinder(service_),
@@ -264,8 +311,26 @@ void UpdateEngineClientAndroid::UpdateEngineServiceDied() {
 }  // namespace internal
 }  // namespace chromeos_update_engine
 
+/* bcm7252ssffdr4:/ # update_engine_client --help 
+Android Update Engine Client
+
+  --cancel  (Cancel the ongoing update and exit.)  type: bool  default: false
+  --follow  (Follow status update changes until a final state is reached. Exit status is 0 if the update succeeded, and 1 otherwise.)  type: bool  default: false
+  --headers  (A list of key-value pairs, one element of the list per line. Used when --update is passed.)  type: string  default: ""
+  --help  (Show this help message)  type: bool  default: false
+  --offset  (The offset in the payload where the CrAU update starts. Used when --update is passed.)  type: int64  default: 0
+  --payload  (The URI to the update payload to use.)  type: string  default: "http://127.0.0.1:8080/payload"
+  --reset_status  (Reset an already applied update and exit.)  type: bool  default: false
+  --resume  (Resume a suspended update.)  type: bool  default: false
+  --size  (The size of the CrAU part of the payload. If 0 is passed, it will be autodetected. Used when --update is passed.)  type: int64  default: 0
+  --suspend  (Suspend an ongoing update and exit.)  type: bool  default: false
+  --update  (Start a new update, if no update in progress.)  type: bool  default: false
+————————————————
+*/
+// Android自带的客户端demo进程update_engine_client的入口
 int main(int argc, char** argv) {
   chromeos_update_engine::internal::UpdateEngineClientAndroid client(argc,
                                                                      argv);
+  // 还是先执行external\libbrillo\brillo\daemons\daemon.cc父类brillo::Daemon的Run()函数
   return client.Run();
 }

@@ -134,6 +134,7 @@ bool UpdateAttempterAndroid::ApplyPayload(
     int64_t payload_size,
     const vector<string>& key_value_pair_headers,
     brillo::ErrorPtr* error) {
+  // 正常情况开始更新时，UpdateStatus status_{UpdateStatus::IDLE}
   if (status_ == UpdateStatus::UPDATED_NEED_REBOOT) {
     return LogAndSetError(
         error, FROM_HERE, "An update already applied, waiting for reboot");
