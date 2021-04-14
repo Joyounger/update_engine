@@ -64,6 +64,29 @@ int main(int argc, char** argv) {
   umask(S_IRWXG | S_IRWXO);
 
   chromeos_update_engine::UpdateEngineDaemon update_engine_daemon;
+  // UpdateEngineDaemon继承自brillo::Daemon，这里执行的是
+  // external\libbrillo\brillo\daemons\daemon.cc中的Run()
+  // 在daemon.cc中的Run()中，先执行UpdateEngineDaemon override的OnInit
+  /*int Daemon::Run() {
+  int exit_code = OnInit();
+  if (exit_code != EX_OK)
+    return exit_code;
+
+  message_loop_.PostTask(
+      base::BindOnce(&Daemon::OnEventLoopStartedTask, base::Unretained(this)));
+  message_loop_.Run();
+
+  OnShutdown(&exit_code_);
+
+  // base::RunLoop::QuitClosure() causes the message loop to quit
+  // immediately, even if pending tasks are still queued.
+  // Run a secondary loop to make sure all those are processed.
+  // This becomes important when working with D-Bus since dbus::Bus does
+  // a bunch of clean-up tasks asynchronously when shutting down.
+  while (message_loop_.RunOnce(false /* may_block */)) {}
+
+  return exit_code_;
+  }*/
   int exit_code = update_engine_daemon.Run();
 
   chromeos_update_engine::Subprocess::Get().FlushBufferedLogsAtExit();
