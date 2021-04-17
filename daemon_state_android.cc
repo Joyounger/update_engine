@@ -27,6 +27,7 @@
 namespace chromeos_update_engine {
 
 bool DaemonStateAndroid::Initialize() {
+  // 获取bootcontrol接口，boot_control_ -- Interface for the boot control functions
   boot_control_ = boot_control::CreateBootControl();
   if (!boot_control_) {
     LOG(WARNING) << "Unable to create BootControl instance, using stub "

@@ -35,14 +35,26 @@ namespace chromeos_update_engine {
 int UpdateEngineDaemon::OnInit() {
   // Register the |subprocess_| singleton with this Daemon as the signal
   // handler.
+  // The Subprocess class is a singleton. It's used to spawn off a subprocess
+  // and get notified when the subprocess exits.
+  // To create the Subprocess singleton just instantiate it with and call Init().
+  // You can't have two Subprocess instances initialized at the same time.
+  //在common/subprocess.cc 中注册信号处理器
   subprocess_.Init(this);
 
+  // 在Daemon::OnInit中，为SIGTERM，SIGINT注册Daemon::Shutdown，为SIGHUP注册Daemon::Restart
+  //调用到external/libbrillo/brillo/daemons/daemon.cc里面，对信号处理器进行初始化
   int exit_code = Daemon::OnInit();
   if (exit_code != EX_OK)
     return exit_code;
 
+// USE_BINDER定义在update_engine.gyp:59:      'USE_BINDER=<(USE_binder)'
+// gyp(generate your project)是google的编译工程生产工具，
+// 在Android.bp中用"-DUSE_BINDER=1"传入
 #if USE_BINDER
+  //在 system/core/libbinderwrapper/binder_wrapper.cc 里面创建一个 RealBinderWrapper 对象
   android::BinderWrapper::Create();
+  //external/libbrillo/brillo/binder_watcher.cc 当前进程binder 的初始化
   binder_watcher_.Init();
 #endif  // USE_BINDER
 
@@ -56,6 +68,7 @@ int UpdateEngineDaemon::OnInit() {
   LOG_IF(ERROR, !real_system_state->Initialize())
       << "Failed to initialize system state.";
 #else  // !USE_OMAHA
+  // 初始化全局update engine状态, DaemonStateAndroid继承自DaemonStateInterface
   DaemonStateAndroid* daemon_state_android = new DaemonStateAndroid();
   daemon_state_.reset(daemon_state_android);
   LOG_IF(ERROR, !daemon_state_android->Initialize())
